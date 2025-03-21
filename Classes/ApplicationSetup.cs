@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using System.Text;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace RichPresenceApp.Classes
 {
@@ -32,7 +34,7 @@ namespace RichPresenceApp.Classes
                 }
 
                 // Define possible CS2 installation paths
-                string[] possiblePaths = new string[]
+                var possiblePaths = new List<string>
                 {
                     // Original CS:GO path
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Steam", "steamapps", "common", "Counter-Strike Global Offensive", "game", "csgo", "cfg"),
@@ -45,26 +47,45 @@ namespace RichPresenceApp.Classes
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Steam", "steamapps", "common", "Counter-Strike Global Offensive", "game", "csgo", "cfg", "gamestate_integration")
                 };
 
-                // Check if any of the paths exist
-                string? existingPath = null;
-                foreach (string path in possiblePaths)
+                // Try to get CS2 directory from Utils
+                string? cs2Dir = Utils.GetCS2Directory();
+                if (!string.IsNullOrEmpty(cs2Dir))
                 {
-                    if (Directory.Exists(path))
-                    {
-                        existingPath = path;
-                        break;
-                    }
-                    else
-                    {
-                        ConsoleManager.WriteLine($"CS2 GSI config directory not found: {path}");
-                    }
+                    // Add potential cfg paths based on detected CS2 directory
+                    possiblePaths.Add(Path.Combine(cs2Dir, "game", "csgo", "cfg"));
+                    possiblePaths.Add(Path.Combine(cs2Dir, "csgo", "cfg"));
+                    possiblePaths.Add(Path.Combine(cs2Dir, "cfg"));
                 }
+
+                // Check if any of the paths exist
+                string? existingPath = possiblePaths.FirstOrDefault(Directory.Exists);
 
                 // If no path exists, return
                 if (existingPath == null)
                 {
                     ConsoleManager.WriteLine("Could not find CS2 installation directory", ConsoleColor.Red);
                     return;
+                }
+
+                // Create gamestate_integration directory if it doesn't exist
+                string gsiDir = Path.Combine(existingPath, "gamestate_integration");
+                if (!Directory.Exists(gsiDir))
+                {
+                    try
+                    {
+                        Directory.CreateDirectory(gsiDir);
+                        existingPath = gsiDir;
+                    }
+                    catch (Exception ex)
+                    {
+                        ConsoleManager.WriteLine($"Failed to create gamestate_integration directory: {ex.Message}", ConsoleColor.Yellow);
+                        // Continue with the base cfg directory
+                    }
+                }
+                else
+                {
+                    // Use the gamestate_integration directory if it exists
+                    existingPath = gsiDir;
                 }
 
                 // Create GSI config file path
@@ -78,7 +99,7 @@ namespace RichPresenceApp.Classes
                 }
 
                 // Create GSI config content
-                StringBuilder gsiConfig = new StringBuilder();
+                var gsiConfig = new StringBuilder(512); // Pre-allocate capacity
                 gsiConfig.AppendLine("\"CS2 Rich Presence\"");
                 gsiConfig.AppendLine("{");
                 gsiConfig.AppendLine($"    \"uri\"          \"http://{Config.Current.Host}:{Config.Current.HttpPort}\"");
@@ -110,3 +131,4 @@ namespace RichPresenceApp.Classes
         }
     }
 }
+

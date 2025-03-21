@@ -1,7 +1,6 @@
 ﻿using System;
 using System.IO;
-using System.Text.Json;
-using System.Text.Json.Serialization;
+using Newtonsoft.Json;
 
 namespace RichPresenceApp.Classes
 {
@@ -17,9 +16,16 @@ namespace RichPresenceApp.Classes
             "config.json"
         );
 
+        // JSON serializer settings - create once and reuse
+        private static readonly JsonSerializerSettings _serializerSettings = new JsonSerializerSettings
+        {
+            Formatting = Formatting.Indented,
+            NullValueHandling = NullValueHandling.Ignore
+        };
+
         // Discord application ID - hardcoded, not serialized
         [JsonIgnore]
-        public string ApplicationId { get; } = "DISCORD_CLIENT_ID"; // Replace with your actual Discord application ID
+        public string ApplicationId { get; } = "1352354388399882333"; // Using the application ID from the reference code
 
         // HTTP server host
         public string Host { get; set; } = "127.0.0.1";
@@ -33,49 +39,22 @@ namespace RichPresenceApp.Classes
         public bool ShowScore { get; set; } = true;
         public bool ShowTeam { get; set; } = true;
 
-        // Application settings
-        public bool MinimizeToTray { get; set; } = false;
-        public bool StartWithWindows { get; set; } = true;
-
         // Load configuration
         public static void Load()
         {
             try
             {
                 // Create config directory if it doesn't exist
-                string? directory = Path.GetDirectoryName(ConfigFilePath);
-                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-                {
-                    Directory.CreateDirectory(directory);
-                }
+                EnsureConfigDirectoryExists();
 
                 // Check if config file exists
                 if (File.Exists(ConfigFilePath))
                 {
-                    // Read config file
-                    string json = File.ReadAllText(ConfigFilePath);
-
-                    // Deserialize config
-                    var options = new JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive = true
-                    };
-                    var config = JsonSerializer.Deserialize<Config>(json, options);
-
-                    // Set current config
-                    Current = config;
-
-                    ConsoleManager.WriteLine("Configuration loaded successfully.", ConsoleColor.Green, true);
+                    LoadExistingConfig();
                 }
                 else
                 {
-                    // Create default config
-                    Current = new Config();
-
-                    // Save default config
-                    Save();
-
-                    ConsoleManager.WriteLine("Default configuration created.", ConsoleColor.Green, true);
+                    CreateDefaultConfig();
                 }
             }
             catch (Exception ex)
@@ -85,6 +64,51 @@ namespace RichPresenceApp.Classes
                 // Create default config
                 Current = new Config();
             }
+        }
+
+        // Ensure config directory exists
+        private static void EnsureConfigDirectoryExists()
+        {
+            string? directory = Path.GetDirectoryName(ConfigFilePath);
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+        }
+
+        // Load existing config
+        private static void LoadExistingConfig()
+        {
+            try
+            {
+                // Read config file
+                string json = File.ReadAllText(ConfigFilePath);
+
+                // Deserialize config
+                var config = JsonConvert.DeserializeObject<Config>(json, _serializerSettings);
+
+                // Set current config
+                Current = config;
+
+                ConsoleManager.WriteLine("Configuration loaded successfully.", ConsoleColor.Green, true);
+            }
+            catch (Exception ex)
+            {
+                ConsoleManager.WriteLine($"Error loading existing config: {ex.Message}", ConsoleColor.Red, true);
+                CreateDefaultConfig();
+            }
+        }
+
+        // Create default config
+        private static void CreateDefaultConfig()
+        {
+            // Create default config
+            Current = new Config();
+
+            // Save default config
+            Save();
+
+            ConsoleManager.WriteLine("Default configuration created.", ConsoleColor.Green, true);
         }
 
         // Save configuration
@@ -99,20 +123,10 @@ namespace RichPresenceApp.Classes
                 }
 
                 // Create config directory if it doesn't exist
-                string? directory = Path.GetDirectoryName(ConfigFilePath);
-                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-                {
-                    Directory.CreateDirectory(directory);
-                }
+                EnsureConfigDirectoryExists();
 
                 // Serialize config with options
-                var options = new JsonSerializerOptions
-                {
-                    WriteIndented = true,
-                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-                };
-
-                string json = JsonSerializer.Serialize(Current, options);
+                string json = JsonConvert.SerializeObject(Current, _serializerSettings);
 
                 // Write config file
                 File.WriteAllText(ConfigFilePath, json);
@@ -126,3 +140,4 @@ namespace RichPresenceApp.Classes
         }
     }
 }
+

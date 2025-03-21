@@ -23,6 +23,15 @@ namespace RichPresenceApp.Classes
         // Lock object for thread safety
         private static readonly object _logLock = new object();
 
+        // Buffer for log messages to reduce disk I/O
+        private static readonly StringBuilder _logBuffer = new StringBuilder(4096);
+
+        // Timer for flushing log buffer
+        private static System.Threading.Timer? _flushTimer;
+
+        // Constants
+        private const int FLUSH_INTERVAL_MS = 5000; // 5 seconds
+
         // Initialize console manager
         public static void Initialize()
         {
@@ -37,6 +46,9 @@ namespace RichPresenceApp.Classes
 
                 // Open log file for writing
                 OpenLogFile();
+
+                // Start flush timer
+                _flushTimer = new System.Threading.Timer(FlushLogBuffer, null, FLUSH_INTERVAL_MS, FLUSH_INTERVAL_MS);
 
                 // Write initial log entry
                 WriteLine($"Log started at {DateTime.Now}", ConsoleColor.Green, true);
@@ -62,13 +74,37 @@ namespace RichPresenceApp.Classes
                     _logWriter?.Close();
                     _logWriter?.Dispose();
 
-                    // Create new writer with auto-flush
-                    _logWriter = new StreamWriter(LogFilePath, false) { AutoFlush = true };
+                    // Create new writer with auto-flush disabled for better performance
+                    _logWriter = new StreamWriter(LogFilePath, false, Encoding.UTF8) { AutoFlush = false };
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error opening log file: {ex.Message}");
+            }
+        }
+
+        // Flush log buffer on timer
+        private static void FlushLogBuffer(object? state)
+        {
+            try
+            {
+                lock (_logLock)
+                {
+                    if (_logBuffer.Length > 0 && _logWriter != null)
+                    {
+                        _logWriter.Write(_logBuffer.ToString());
+                        _logWriter.Flush();
+                        _logBuffer.Clear();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error flushing log buffer: {ex.Message}");
+
+                // Try to reopen log file
+                OpenLogFile();
             }
         }
 
@@ -81,7 +117,7 @@ namespace RichPresenceApp.Classes
                 if (!_debugMode && !forceOutput && IsDebugMessage(message))
                 {
                     // Still log to file but don't show in console
-                    AppendToLogFile($"[{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")}] {message}");
+                    AppendToLogBuffer($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}");
                     return;
                 }
 
@@ -96,8 +132,8 @@ namespace RichPresenceApp.Classes
                 Console.WriteLine(formattedMessage);
                 Console.ResetColor();
 
-                // Write to log file
-                AppendToLogFile(formattedMessage);
+                // Write to log buffer
+                AppendToLogBuffer(formattedMessage);
             }
             catch (Exception ex)
             {
@@ -105,53 +141,41 @@ namespace RichPresenceApp.Classes
             }
         }
 
-        // Append message to log file
-        private static void AppendToLogFile(string message)
+        // Append message to log buffer
+        private static void AppendToLogBuffer(string message)
         {
             try
             {
                 lock (_logLock)
                 {
-                    // Check if log writer is open
-                    if (_logWriter == null)
+                    // Append to buffer
+                    _logBuffer.AppendLine(message);
+
+                    // If buffer exceeds threshold, flush immediately
+                    if (_logBuffer.Length > 4000)
                     {
-                        // Try to reopen log file
-                        OpenLogFile();
-
-                        // Check if reopening succeeded
-                        if (_logWriter == null)
-                        {
-                            Console.WriteLine("Failed to open log file for writing");
-                            return;
-                        }
+                        FlushLogBuffer(null);
                     }
-
-                    // Write message to log file
-                    _logWriter.WriteLine(message);
                 }
             }
             catch (Exception ex)
             {
                 // Don't use WriteLine here to avoid infinite recursion
-                Console.WriteLine($"Error writing to log file: {ex.Message}");
-
-                // Try to reopen log file on next write
-                lock (_logLock)
-                {
-                    _logWriter?.Close();
-                    _logWriter?.Dispose();
-                    _logWriter = null;
-                }
+                Console.WriteLine($"Error appending to log buffer: {ex.Message}");
             }
         }
 
-        // Check if message is a debug message
+        // Optimize IsDebugMessage method to be more selective
         private static bool IsDebugMessage(string message)
         {
-            // Check if message contains debug keywords
+            // Check if message contains debug keywords - more selective filtering
             return message.Contains("Received game state JSON") ||
-                   message.Contains("Updated presence") ||
-                   message.Contains("Manually extracted");
+                   message.Contains("Presence updated:") ||
+                   message.Contains("Sent frame:") ||
+                   message.Contains("Received frame:") ||
+                   message.Contains("Received header:") ||
+                   message.Contains("Connection to Discord established") ||
+                   message.Contains("[DEBUG]");
         }
 
         // Toggle debug mode
@@ -167,11 +191,55 @@ namespace RichPresenceApp.Classes
             return _debugMode;
         }
 
+        // Add method to log only important events
+        public static void LogImportant(string message, ConsoleColor color = ConsoleColor.Green)
+        {
+            WriteLine(message, color, true);
+        }
+
+        // Add method to log debug information
+        public static void LogDebug(string message, ConsoleColor color = ConsoleColor.Cyan)
+        {
+            if (_debugMode)
+            {
+                WriteLine($"[DEBUG] {message}", color, false);
+            }
+            else
+            {
+                // Still log to file but don't show in console
+                AppendToLogBuffer($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [DEBUG] {message}");
+            }
+        }
+
+        // Add method to log errors
+        public static void LogError(string message, Exception? ex = null)
+        {
+            string errorMessage = ex != null ? $"{message}: {ex.Message}" : message;
+            WriteLine(errorMessage, ConsoleColor.Red, true);
+
+            if (ex != null && ex.StackTrace != null)
+            {
+                // Log stack trace to file only
+                AppendToLogBuffer($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Stack trace: {ex.StackTrace}");
+            }
+        }
+
         // Close log file
         public static void Shutdown()
         {
             try
             {
+                // Stop flush timer
+                if (_flushTimer != null)
+                {
+                    _flushTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                    _flushTimer.Dispose();
+                    _flushTimer = null;
+                }
+
+                // Flush buffer one last time
+                FlushLogBuffer(null);
+
                 lock (_logLock)
                 {
                     // Close log writer
@@ -187,3 +255,4 @@ namespace RichPresenceApp.Classes
         }
     }
 }
+

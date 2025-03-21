@@ -2,13 +2,12 @@ using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
-using Microsoft.Win32;
 
 namespace RichPresenceApp.Classes
 {
     public class ConfigForm : Form
     {
-        // CS2 Theme Colors
+        // CS2 Theme Colors - make readonly
         private static readonly Color BackgroundColor = Color.FromArgb(24, 26, 27);
         private static readonly Color PanelColor = Color.FromArgb(32, 34, 37);
         private static readonly Color AccentColor = Color.FromArgb(255, 165, 0); // CS2 Orange
@@ -19,13 +18,10 @@ namespace RichPresenceApp.Classes
         private Panel? _mainPanel;
         private Label? _titleLabel;
         private Label? _displaySettingsLabel;
-        private Label? _appSettingsLabel;
         private CheckBox? _showMapCheckBox;
         private CheckBox? _showGameModeCheckBox;
         private CheckBox? _showScoreCheckBox;
         private CheckBox? _showTeamCheckBox;
-        private CheckBox? _minimizeToTrayCheckBox;
-        private CheckBox? _startWithWindowsCheckBox;
         private CS2Button? _saveButton;
         private CS2Button? _cancelButton;
 
@@ -47,7 +43,7 @@ namespace RichPresenceApp.Classes
         {
             // Set form properties
             Text = "CS2 Rich Presence Settings";
-            Size = new Size(450, 500); // Increased height for new controls
+            Size = new Size(450, 350); // Reduced height since we removed controls
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -83,15 +79,6 @@ namespace RichPresenceApp.Classes
                 ForeColor = AccentColor,
                 AutoSize = true,
                 Location = new Point(30, 70)
-            };
-
-            _appSettingsLabel = new Label
-            {
-                Text = "Application Settings",
-                Font = new Font("Segoe UI", 12F, FontStyle.Bold, GraphicsUnit.Point),
-                ForeColor = AccentColor,
-                AutoSize = true,
-                Location = new Point(30, 240)
             };
 
             // Create display settings checkboxes
@@ -131,30 +118,11 @@ namespace RichPresenceApp.Classes
                 Font = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point)
             };
 
-            // Create application settings checkboxes
-            _minimizeToTrayCheckBox = new CheckBox
-            {
-                Text = "Minimize to Tray",
-                ForeColor = TextColor,
-                AutoSize = true,
-                Location = new Point(40, 275),
-                Font = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point)
-            };
-
-            _startWithWindowsCheckBox = new CheckBox
-            {
-                Text = "Start with Windows",
-                ForeColor = TextColor,
-                AutoSize = true,
-                Location = new Point(40, 310),
-                Font = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point)
-            };
-
             // Create buttons
             _saveButton = new CS2Button
             {
                 Text = "SAVE",
-                Location = new Point(230, 400),
+                Location = new Point(230, 260),
                 Size = new Size(90, 35),
                 BackColor = AccentColor,
                 ForeColor = Color.Black,
@@ -164,7 +132,7 @@ namespace RichPresenceApp.Classes
             _cancelButton = new CS2Button
             {
                 Text = "CANCEL",
-                Location = new Point(330, 400),
+                Location = new Point(330, 260),
                 Size = new Size(90, 35),
                 BackColor = Color.FromArgb(60, 63, 65),
                 ForeColor = TextColor,
@@ -172,26 +140,20 @@ namespace RichPresenceApp.Classes
             };
 
             // Add event handlers
-            if (_saveButton != null) _saveButton.Click += SaveButton_Click;
-            if (_cancelButton != null) _cancelButton.Click += CancelButton_Click;
+            _saveButton.Click += SaveButton_Click;
+            _cancelButton.Click += CancelButton_Click;
 
             // Add controls to form
-            if (_mainPanel != null)
-            {
-                if (_titleLabel != null) _mainPanel.Controls.Add(_titleLabel);
-                if (_displaySettingsLabel != null) _mainPanel.Controls.Add(_displaySettingsLabel);
-                if (_appSettingsLabel != null) _mainPanel.Controls.Add(_appSettingsLabel);
-                if (_showMapCheckBox != null) _mainPanel.Controls.Add(_showMapCheckBox);
-                if (_showGameModeCheckBox != null) _mainPanel.Controls.Add(_showGameModeCheckBox);
-                if (_showScoreCheckBox != null) _mainPanel.Controls.Add(_showScoreCheckBox);
-                if (_showTeamCheckBox != null) _mainPanel.Controls.Add(_showTeamCheckBox);
-                if (_minimizeToTrayCheckBox != null) _mainPanel.Controls.Add(_minimizeToTrayCheckBox);
-                if (_startWithWindowsCheckBox != null) _mainPanel.Controls.Add(_startWithWindowsCheckBox);
-                if (_saveButton != null) _mainPanel.Controls.Add(_saveButton);
-                if (_cancelButton != null) _mainPanel.Controls.Add(_cancelButton);
+            _mainPanel.Controls.Add(_titleLabel);
+            _mainPanel.Controls.Add(_displaySettingsLabel);
+            _mainPanel.Controls.Add(_showMapCheckBox);
+            _mainPanel.Controls.Add(_showGameModeCheckBox);
+            _mainPanel.Controls.Add(_showScoreCheckBox);
+            _mainPanel.Controls.Add(_showTeamCheckBox);
+            _mainPanel.Controls.Add(_saveButton);
+            _mainPanel.Controls.Add(_cancelButton);
 
-                Controls.Add(_mainPanel);
-            }
+            Controls.Add(_mainPanel);
         }
 
         // Apply CS2 style to checkboxes
@@ -229,18 +191,6 @@ namespace RichPresenceApp.Classes
                 if (_showGameModeCheckBox != null) _showGameModeCheckBox.Checked = Config.Current.ShowGameMode;
                 if (_showScoreCheckBox != null) _showScoreCheckBox.Checked = Config.Current.ShowScore;
                 if (_showTeamCheckBox != null) _showTeamCheckBox.Checked = Config.Current.ShowTeam;
-
-                // Set application settings checkbox values
-                if (_minimizeToTrayCheckBox != null) _minimizeToTrayCheckBox.Checked = Config.Current.MinimizeToTray;
-                if (_startWithWindowsCheckBox != null) _startWithWindowsCheckBox.Checked = Config.Current.StartWithWindows;
-
-                // Check if startup registry key exists
-                bool startupExists = IsStartupEnabled();
-                if (_startWithWindowsCheckBox != null && startupExists != Config.Current.StartWithWindows)
-                {
-                    // Update checkbox to match actual registry state
-                    _startWithWindowsCheckBox.Checked = startupExists;
-                }
             }
             catch (Exception ex)
             {
@@ -266,30 +216,6 @@ namespace RichPresenceApp.Classes
                 if (_showScoreCheckBox != null) Config.Current.ShowScore = _showScoreCheckBox.Checked;
                 if (_showTeamCheckBox != null) Config.Current.ShowTeam = _showTeamCheckBox.Checked;
 
-                // Update application settings
-                if (_minimizeToTrayCheckBox != null) Config.Current.MinimizeToTray = _minimizeToTrayCheckBox.Checked;
-                if (_startWithWindowsCheckBox != null)
-                {
-                    bool oldValue = Config.Current.StartWithWindows;
-                    bool newValue = _startWithWindowsCheckBox.Checked;
-
-                    // Update config
-                    Config.Current.StartWithWindows = newValue;
-
-                    // Update startup registry
-                    if (oldValue != newValue)
-                    {
-                        if (newValue)
-                        {
-                            EnableStartup();
-                        }
-                        else
-                        {
-                            DisableStartup();
-                        }
-                    }
-                }
-
                 // Save config
                 Config.Save();
 
@@ -312,60 +238,6 @@ namespace RichPresenceApp.Classes
             Close();
         }
 
-        // Check if startup is enabled
-        private bool IsStartupEnabled()
-        {
-            try
-            {
-                using RegistryKey? key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", false);
-                return key?.GetValue(Program.AppName) != null;
-            }
-            catch (Exception ex)
-            {
-                ConsoleManager.WriteLine($"Error checking startup registry: {ex.Message}", ConsoleColor.Red, true);
-                return false;
-            }
-        }
-
-        // Enable startup
-        private void EnableStartup()
-        {
-            try
-            {
-                using RegistryKey? key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
-                if (key != null)
-                {
-                    string appPath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName ?? "";
-                    key.SetValue(Program.AppName, $"\"{appPath}\"");
-                    ConsoleManager.WriteLine("Added application to startup", ConsoleColor.Green, true);
-                }
-            }
-            catch (Exception ex)
-            {
-                ConsoleManager.WriteLine($"Error adding to startup: {ex.Message}", ConsoleColor.Red, true);
-                throw;
-            }
-        }
-
-        // Disable startup
-        private void DisableStartup()
-        {
-            try
-            {
-                using RegistryKey? key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
-                if (key != null)
-                {
-                    key.DeleteValue(Program.AppName, false);
-                    ConsoleManager.WriteLine("Removed application from startup", ConsoleColor.Green, true);
-                }
-            }
-            catch (Exception ex)
-            {
-                ConsoleManager.WriteLine($"Error removing from startup: {ex.Message}", ConsoleColor.Red, true);
-                throw;
-            }
-        }
-
         // Override OnPaint to draw a border
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -377,6 +249,26 @@ namespace RichPresenceApp.Classes
                 AccentColor, 1, ButtonBorderStyle.Solid,
                 AccentColor, 1, ButtonBorderStyle.Solid,
                 AccentColor, 1, ButtonBorderStyle.Solid);
+        }
+
+        // Override Dispose to clean up resources
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                // Dispose managed resources
+                _titleLabel?.Dispose();
+                _displaySettingsLabel?.Dispose();
+                _showMapCheckBox?.Dispose();
+                _showGameModeCheckBox?.Dispose();
+                _showScoreCheckBox?.Dispose();
+                _showTeamCheckBox?.Dispose();
+                _saveButton?.Dispose();
+                _cancelButton?.Dispose();
+                _mainPanel?.Dispose();
+            }
+
+            base.Dispose(disposing);
         }
     }
 
@@ -457,3 +349,4 @@ namespace RichPresenceApp.Classes
         }
     }
 }
+

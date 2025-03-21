@@ -1,11 +1,11 @@
 using System;
 using System.Diagnostics;
-using System.Threading;
+using System.Threading; // Make sure this is included
 using System.Threading.Tasks;
 
 namespace RichPresenceApp.Classes
 {
-    public class GameStateMonitor
+    public class GameStateMonitor : IDisposable
     {
         // Game state
         private GameState _gameState = new GameState();
@@ -13,8 +13,11 @@ namespace RichPresenceApp.Classes
         // Discord manager
         private readonly DiscordManager _discordManager;
 
-        // Game process monitor timer - explicitly use System.Threading.Timer
+        // Game process monitor timer
         private System.Threading.Timer? _gameProcessMonitorTimer;
+
+        // Process name cache
+        private readonly string[] _processNames = { "cs2", "csgo", "Counter-Strike 2", "Counter-Strike Global Offensive" };
 
         // Constructor
         public GameStateMonitor(DiscordManager discordManager)
@@ -27,7 +30,10 @@ namespace RichPresenceApp.Classes
         {
             try
             {
-                // Create timer - explicitly use System.Threading.Timer
+                // Stop existing timer if any
+                StopGameProcessMonitor();
+
+                // Create timer with 5-second interval
                 _gameProcessMonitorTimer = new System.Threading.Timer(CheckGameProcess, null, 0, 5000);
 
                 ConsoleManager.WriteLine("Game process monitor started.", ConsoleColor.Green);
@@ -74,31 +80,17 @@ namespace RichPresenceApp.Classes
             }
         }
 
-        // Check if CS2 is running
+        // Check if CS2 is running - optimized implementation
         private bool IsCS2Running()
         {
             try
             {
-                // Get all processes
-                Process[] processes = Process.GetProcesses();
-
-                // Check if CS2 is running
-                foreach (Process process in processes)
+                // Use cached process names for faster lookup
+                foreach (var processName in _processNames)
                 {
-                    try
+                    if (Process.GetProcessesByName(processName).Length > 0)
                     {
-                        // Check process name
-                        if (process.ProcessName.Equals("cs2", StringComparison.OrdinalIgnoreCase) ||
-                            process.ProcessName.Equals("csgo", StringComparison.OrdinalIgnoreCase) ||
-                            process.ProcessName.Equals("Counter-Strike 2", StringComparison.OrdinalIgnoreCase) ||
-                            process.ProcessName.Equals("Counter-Strike Global Offensive", StringComparison.OrdinalIgnoreCase))
-                        {
-                            return true;
-                        }
-                    }
-                    catch
-                    {
-                        // Ignore errors for individual processes
+                        return true;
                     }
                 }
 
@@ -106,19 +98,19 @@ namespace RichPresenceApp.Classes
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error checking if CS2 is running: {ex.Message}", ConsoleColor.Red);
+                ConsoleManager.LogError("Error checking if CS2 is running", ex);
                 return false;
             }
         }
 
-        // Update game state
+        // Update game state - optimized
         public void UpdateGameState(GameState gameState)
         {
             try
             {
                 if (gameState == null)
                 {
-                    ConsoleManager.WriteLine("Received null game state", ConsoleColor.Yellow);
+                    ConsoleManager.LogError("Received null game state");
                     return;
                 }
 
@@ -130,7 +122,7 @@ namespace RichPresenceApp.Classes
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error updating game state: {ex.Message}", ConsoleColor.Red);
+                ConsoleManager.LogError("Error updating game state", ex);
             }
         }
 
@@ -140,8 +132,12 @@ namespace RichPresenceApp.Classes
             try
             {
                 // Dispose timer
-                _gameProcessMonitorTimer?.Dispose();
-                _gameProcessMonitorTimer = null;
+                if (_gameProcessMonitorTimer != null)
+                {
+                    _gameProcessMonitorTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                    _gameProcessMonitorTimer.Dispose();
+                    _gameProcessMonitorTimer = null;
+                }
 
                 ConsoleManager.WriteLine("Game process monitor stopped.", ConsoleColor.Yellow);
             }
@@ -150,5 +146,13 @@ namespace RichPresenceApp.Classes
                 ConsoleManager.WriteLine($"Error stopping game process monitor: {ex.Message}", ConsoleColor.Red);
             }
         }
+
+        // Implement IDisposable
+        public void Dispose()
+        {
+            StopGameProcessMonitor();
+            GC.SuppressFinalize(this);
+        }
     }
 }
+

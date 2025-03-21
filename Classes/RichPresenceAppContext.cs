@@ -3,10 +3,11 @@ using System.Drawing;
 using System.IO;
 using System.Reflection;
 using System.Windows.Forms;
+using System.Diagnostics;
 
 namespace RichPresenceApp.Classes
 {
-    public class RichPresenceAppContext : ApplicationContext
+    public class RichPresenceAppContext : ApplicationContext, IDisposable
     {
         // System tray icon
         private readonly NotifyIcon _trayIcon;
@@ -23,79 +24,199 @@ namespace RichPresenceApp.Classes
         // Main form
         private Form? _mainForm;
 
+        // Icon cache
+        private static Icon? _cachedIcon = null;
+
         // Constructor with no parameters
         public RichPresenceAppContext()
         {
-            // Create system tray icon
-            _trayIcon = new NotifyIcon
+            try
             {
-                Icon = LoadApplicationIcon(),
-                ContextMenuStrip = CreateContextMenu(),
-                Visible = true,
-                Text = Program.AppName
-            };
+                // Create system tray icon
+                _trayIcon = new NotifyIcon
+                {
+                    Icon = LoadApplicationIcon(),
+                    ContextMenuStrip = CreateContextMenu(),
+                    Visible = true,
+                    Text = Program.AppName
+                };
 
-            // Add double-click handler to show main form
-            _trayIcon.DoubleClick += (sender, e) => ShowMainForm();
+                // Add double-click handler to show main form
+                _trayIcon.DoubleClick += (sender, e) => ShowMainForm();
 
-            ConsoleManager.WriteLine("Application context initialized.", ConsoleColor.Green, true);
+                // Show balloon tip to indicate the app is running
+                ShowStartupNotification();
+
+                ConsoleManager.WriteLine("Application context initialized.", ConsoleColor.Green, true);
+            }
+            catch (Exception ex)
+            {
+                ConsoleManager.WriteLine($"Error in RichPresenceAppContext constructor: {ex.Message}", ConsoleColor.Red, true);
+
+                // Create a minimal tray icon with default system icon
+                _trayIcon = new NotifyIcon
+                {
+                    Icon = SystemIcons.Application,
+                    ContextMenuStrip = CreateContextMenu(),
+                    Visible = true,
+                    Text = Program.AppName
+                };
+
+                // Add double-click handler to show main form
+                _trayIcon.DoubleClick += (sender, e) => ShowMainForm();
+
+                // Show balloon tip to indicate the app is running
+                ShowStartupNotification();
+            }
         }
 
         // Constructor with parameters
         public RichPresenceAppContext(HttpServer httpServer, GameStateMonitor gameStateMonitor, DiscordManager discordManager)
         {
-            // Store references
-            _httpServer = httpServer ?? throw new ArgumentNullException(nameof(httpServer));
-            _gameStateMonitor = gameStateMonitor ?? throw new ArgumentNullException(nameof(gameStateMonitor));
-            _discordManager = discordManager ?? throw new ArgumentNullException(nameof(discordManager));
-
-            // Create system tray icon
-            _trayIcon = new NotifyIcon
+            try
             {
-                Icon = LoadApplicationIcon(),
-                ContextMenuStrip = CreateContextMenu(),
-                Visible = true,
-                Text = Program.AppName
-            };
+                // Store references
+                _httpServer = httpServer ?? throw new ArgumentNullException(nameof(httpServer));
+                _gameStateMonitor = gameStateMonitor ?? throw new ArgumentNullException(nameof(gameStateMonitor));
+                _discordManager = discordManager ?? throw new ArgumentNullException(nameof(discordManager));
 
-            // Add double-click handler to show main form
-            _trayIcon.DoubleClick += (sender, e) => ShowMainForm();
+                // Create system tray icon with error handling
+                try
+                {
+                    _trayIcon = new NotifyIcon
+                    {
+                        Icon = LoadApplicationIcon(),
+                        ContextMenuStrip = CreateContextMenu(),
+                        Visible = true,
+                        Text = Program.AppName
+                    };
 
-            ConsoleManager.WriteLine("Application context initialized.", ConsoleColor.Green, true);
+                    // Add double-click handler to show main form
+                    _trayIcon.DoubleClick += (sender, e) => ShowMainForm();
+
+                    // Show balloon tip to indicate the app is running
+                    ShowStartupNotification();
+                }
+                catch (Exception ex)
+                {
+                    // If icon loading fails, use a default system icon
+                    ConsoleManager.WriteLine($"Error creating tray icon: {ex.Message}", ConsoleColor.Yellow, true);
+
+                    _trayIcon = new NotifyIcon
+                    {
+                        Icon = SystemIcons.Application,
+                        ContextMenuStrip = CreateContextMenu(),
+                        Visible = true,
+                        Text = Program.AppName
+                    };
+
+                    // Add double-click handler to show main form
+                    _trayIcon.DoubleClick += (sender, e) => ShowMainForm();
+
+                    // Show balloon tip to indicate the app is running
+                    ShowStartupNotification();
+                }
+
+                ConsoleManager.WriteLine("Application context initialized.", ConsoleColor.Green, true);
+            }
+            catch (Exception ex)
+            {
+                ConsoleManager.WriteLine($"Error initializing application context: {ex.Message}", ConsoleColor.Red, true);
+
+                // Create a minimal tray icon with default system icon
+                _trayIcon = new NotifyIcon
+                {
+                    Icon = SystemIcons.Application,
+                    ContextMenuStrip = CreateContextMenu(),
+                    Visible = true,
+                    Text = Program.AppName
+                };
+
+                throw; // Rethrow to be caught by the main exception handler
+            }
         }
 
-        // Load application icon
+        // Show startup notification - optimized
+        private void ShowStartupNotification()
+        {
+            try
+            {
+                _trayIcon.BalloonTipTitle = Program.AppName;
+                _trayIcon.BalloonTipText = "Application is running in the system tray. Double-click the icon to open settings.";
+                _trayIcon.BalloonTipIcon = ToolTipIcon.Info;
+                _trayIcon.ShowBalloonTip(3000); // Reduced from 5000 to 3000ms
+            }
+            catch (Exception ex)
+            {
+                ConsoleManager.LogError("Error showing startup notification", ex);
+            }
+        }
+
+        // Load application icon with caching
         private Icon LoadApplicationIcon()
         {
             try
             {
+                // Return cached icon if available
+                if (_cachedIcon != null)
+                {
+                    return _cachedIcon;
+                }
+
                 // Try to load icon from file - first check for favicon.ico
                 string faviconPath = Path.Combine(Program.AppPath, "favicon.ico");
                 if (File.Exists(faviconPath))
                 {
-                    ConsoleManager.WriteLine("Loading icon from favicon.ico", ConsoleColor.Green, true);
-                    return new Icon(faviconPath);
+                    try
+                    {
+                        ConsoleManager.WriteLine("Loading icon from favicon.ico", ConsoleColor.Green, true);
+                        _cachedIcon = new Icon(faviconPath);
+                        return _cachedIcon;
+                    }
+                    catch (Exception ex)
+                    {
+                        ConsoleManager.WriteLine($"Error loading favicon.ico: {ex.Message}", ConsoleColor.Yellow, true);
+                        // Continue to next method
+                    }
                 }
 
                 // Try to load icon from embedded resource
-                Icon? embeddedIcon = ExtractIconFromExecutable();
-                if (embeddedIcon != null)
+                try
                 {
-                    ConsoleManager.WriteLine("Loading icon from embedded resource", ConsoleColor.Green, true);
-                    return embeddedIcon;
+                    Icon? embeddedIcon = ExtractIconFromExecutable();
+                    if (embeddedIcon != null)
+                    {
+                        ConsoleManager.WriteLine("Loading icon from embedded resource", ConsoleColor.Green, true);
+                        _cachedIcon = embeddedIcon;
+                        return _cachedIcon;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ConsoleManager.WriteLine($"Error extracting icon from executable: {ex.Message}", ConsoleColor.Yellow, true);
+                    // Continue to next method
                 }
 
                 // Try to load icon from file - fallback to app.ico
                 string appIconPath = Path.Combine(Program.AppPath, "app.ico");
                 if (File.Exists(appIconPath))
                 {
-                    ConsoleManager.WriteLine("Loading icon from app.ico", ConsoleColor.Green, true);
-                    return new Icon(appIconPath);
+                    try
+                    {
+                        ConsoleManager.WriteLine("Loading icon from app.ico", ConsoleColor.Green, true);
+                        _cachedIcon = new Icon(appIconPath);
+                        return _cachedIcon;
+                    }
+                    catch (Exception ex)
+                    {
+                        ConsoleManager.WriteLine($"Error loading app.ico: {ex.Message}", ConsoleColor.Yellow, true);
+                        // Continue to fallback
+                    }
                 }
 
                 // Fallback to default application icon
                 ConsoleManager.WriteLine("Using default application icon", ConsoleColor.Yellow, true);
-                return Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location) ?? SystemIcons.Application;
+                return SystemIcons.Application;
             }
             catch (Exception ex)
             {
@@ -109,29 +230,62 @@ namespace RichPresenceApp.Classes
         {
             try
             {
-                // Get executing assembly
-                Assembly assembly = Assembly.GetExecutingAssembly();
+                // Use AppContext.BaseDirectory instead of Assembly.Location for single-file apps
+                string executablePath = AppContext.BaseDirectory;
 
-                // Get assembly name
-                string assemblyName = assembly.GetName().Name ?? "RichPresenceApp";
-
-                // Try to find icon resource
-                string[] resourceNames = assembly.GetManifestResourceNames();
-                string? iconResourceName = Array.Find(resourceNames, name => name.Contains(".ico"));
-
-                // If icon resource found, load it
-                if (!string.IsNullOrEmpty(iconResourceName))
+                // Try to get the current process's main module filename
+                string? processPath = null;
+                try
                 {
-                    using Stream? stream = assembly.GetManifestResourceStream(iconResourceName);
-                    if (stream != null)
+                    processPath = Process.GetCurrentProcess().MainModule?.FileName;
+                }
+                catch (Exception ex)
+                {
+                    ConsoleManager.WriteLine($"Could not get process path: {ex.Message}", ConsoleColor.Yellow, true);
+                }
+
+                // If we got a valid process path, try to extract the icon
+                if (!string.IsNullOrEmpty(processPath) && File.Exists(processPath))
+                {
+                    try
                     {
-                        return new Icon(stream);
+                        return Icon.ExtractAssociatedIcon(processPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        ConsoleManager.WriteLine($"Failed to extract icon from process path: {ex.Message}", ConsoleColor.Yellow, true);
                     }
                 }
 
-                // Try to extract icon from executable
-                string executablePath = Assembly.GetExecutingAssembly().Location;
-                return Icon.ExtractAssociatedIcon(executablePath);
+                // Try with the entry assembly's name
+                string entryAssemblyPath = Path.Combine(executablePath, AppDomain.CurrentDomain.FriendlyName);
+                if (File.Exists(entryAssemblyPath))
+                {
+                    try
+                    {
+                        return Icon.ExtractAssociatedIcon(entryAssemblyPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        ConsoleManager.WriteLine($"Failed to extract icon from entry assembly: {ex.Message}", ConsoleColor.Yellow, true);
+                    }
+                }
+
+                // Try with a hardcoded executable name
+                string hardcodedPath = Path.Combine(executablePath, "CS2DiscordRPC.exe");
+                if (File.Exists(hardcodedPath))
+                {
+                    try
+                    {
+                        return Icon.ExtractAssociatedIcon(hardcodedPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        ConsoleManager.WriteLine($"Failed to extract icon from hardcoded path: {ex.Message}", ConsoleColor.Yellow, true);
+                    }
+                }
+
+                return null;
             }
             catch (Exception ex)
             {
@@ -145,17 +299,27 @@ namespace RichPresenceApp.Classes
         {
             var menu = new ContextMenuStrip();
 
-            // Add menu items
-            menu.Items.Add("Settings", null, OnSettingsClick);
-            menu.Items.Add("Toggle Debug Mode", null, OnToggleDebugModeClick);
-            menu.Items.Add("-");
-            menu.Items.Add("Exit", null, OnExitClick);
+            try
+            {
+                // Add menu items
+                menu.Items.Add("Settings", null, OnSettingsClick);
+                menu.Items.Add("Toggle Debug Mode", null, OnToggleDebugModeClick);
+                menu.Items.Add("-");
+                menu.Items.Add("Exit", null, OnExitClick);
+            }
+            catch (Exception ex)
+            {
+                ConsoleManager.WriteLine($"Error creating context menu: {ex.Message}", ConsoleColor.Red, true);
+
+                // Add minimal exit option
+                menu.Items.Add("Exit", null, OnExitClick);
+            }
 
             return menu;
         }
 
         // Show main form
-        private void ShowMainForm()
+        public void ShowMainForm()
         {
             try
             {
@@ -163,7 +327,6 @@ namespace RichPresenceApp.Classes
                 if (_mainForm == null || _mainForm.IsDisposed)
                 {
                     _mainForm = new ConfigForm();
-                    _mainForm.FormClosing += MainForm_FormClosing;
                 }
 
                 // Show main form
@@ -178,43 +341,13 @@ namespace RichPresenceApp.Classes
                     _mainForm.WindowState = FormWindowState.Normal;
                 }
                 _mainForm.Activate();
+
+                ConsoleManager.WriteLine("Settings form shown", ConsoleColor.Green, true);
             }
             catch (Exception ex)
             {
                 ConsoleManager.WriteLine($"Error showing main form: {ex.Message}", ConsoleColor.Red, true);
-                MessageBox.Show($"Error showing main form: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        // Handle main form closing
-        private void MainForm_FormClosing(object? sender, FormClosingEventArgs e)
-        {
-            try
-            {
-                // Check if MinimizeToTray is enabled
-                if (Config.Current != null && Config.Current.MinimizeToTray && e.CloseReason == CloseReason.UserClosing)
-                {
-                    // Cancel the close
-                    e.Cancel = true;
-
-                    // Hide the form
-                    if (sender is Form form)
-                    {
-                        form.Hide();
-                    }
-
-                    // Show notification
-                    _trayIcon.ShowBalloonTip(
-                        2000,
-                        Program.AppName,
-                        "Application minimized to tray. Double-click the tray icon to open.",
-                        ToolTipIcon.Info
-                    );
-                }
-            }
-            catch (Exception ex)
-            {
-                ConsoleManager.WriteLine($"Error handling form closing: {ex.Message}", ConsoleColor.Red, true);
+                MessageBox.Show($"Error showing settings: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -233,17 +366,23 @@ namespace RichPresenceApp.Classes
             }
         }
 
-        // Handle toggle debug mode click
+        // Handle toggle debug mode click - optimized
         private void OnToggleDebugModeClick(object? sender, EventArgs e)
         {
             try
             {
                 // Toggle debug mode
                 ConsoleManager.ToggleDebugMode();
+
+                // Update menu item text to reflect current state
+                if (sender is ToolStripMenuItem menuItem)
+                {
+                    menuItem.Text = ConsoleManager.IsDebugMode() ? "Disable Debug Mode" : "Enable Debug Mode";
+                }
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error toggling debug mode: {ex.Message}", ConsoleColor.Red, true);
+                ConsoleManager.LogError("Error toggling debug mode", ex);
                 MessageBox.Show($"Error toggling debug mode: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -253,8 +392,27 @@ namespace RichPresenceApp.Classes
         {
             try
             {
+                ShutdownApplication();
+            }
+            catch (Exception ex)
+            {
+                ConsoleManager.WriteLine($"Error exiting application: {ex.Message}", ConsoleColor.Red, true);
+
+                // Force exit
+                Environment.Exit(1);
+            }
+        }
+
+        // Shutdown application
+        private void ShutdownApplication()
+        {
+            try
+            {
                 // Hide tray icon
-                _trayIcon.Visible = false;
+                if (_trayIcon != null)
+                {
+                    _trayIcon.Visible = false;
+                }
 
                 // Stop HTTP server
                 _httpServer?.Stop();
@@ -270,9 +428,7 @@ namespace RichPresenceApp.Classes
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error exiting application: {ex.Message}", ConsoleColor.Red, true);
-
-                // Force exit
+                ConsoleManager.WriteLine($"Error during shutdown: {ex.Message}", ConsoleColor.Red, true);
                 Environment.Exit(1);
             }
         }
@@ -282,14 +438,36 @@ namespace RichPresenceApp.Classes
         {
             if (disposing)
             {
-                // Dispose tray icon
-                _trayIcon.Dispose();
+                try
+                {
+                    // Dispose tray icon
+                    _trayIcon?.Dispose();
 
-                // Dispose main form
-                _mainForm?.Dispose();
+                    // Dispose main form
+                    _mainForm?.Dispose();
+
+                    // Dispose cached icon
+                    if (_cachedIcon != null)
+                    {
+                        _cachedIcon.Dispose();
+                        _cachedIcon = null;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ConsoleManager.WriteLine($"Error disposing resources: {ex.Message}", ConsoleColor.Red, true);
+                }
             }
 
             base.Dispose(disposing);
         }
+
+        // Explicit IDisposable implementation
+        void IDisposable.Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
     }
 }
+

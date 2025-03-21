@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace RichPresenceApp.Classes
 {
-    public class HttpServer
+    public class HttpServer : IDisposable
     {
         // HTTP listener
         private HttpListener? _listener;
@@ -18,10 +18,21 @@ namespace RichPresenceApp.Classes
         // Game state monitor
         private readonly GameStateMonitor _gameStateMonitor;
 
+        // JSON options - create once and reuse
+        private readonly JsonSerializerOptions _jsonOptions;
+
         // Constructor
         public HttpServer(GameStateMonitor gameStateMonitor)
         {
             _gameStateMonitor = gameStateMonitor ?? throw new ArgumentNullException(nameof(gameStateMonitor));
+
+            // Initialize JSON options once
+            _jsonOptions = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+                ReadCommentHandling = JsonCommentHandling.Skip,
+                AllowTrailingCommas = true
+            };
         }
 
         // Start HTTP server
@@ -34,6 +45,9 @@ namespace RichPresenceApp.Classes
                     ConsoleManager.WriteLine("Configuration not loaded, cannot start HTTP server", ConsoleColor.Red, true);
                     return;
                 }
+
+                // Stop existing server if running
+                Stop();
 
                 // Create HTTP listener
                 _listener = new HttpListener();
@@ -51,7 +65,7 @@ namespace RichPresenceApp.Classes
                 _cancellationTokenSource = new CancellationTokenSource();
 
                 // Start listening for requests
-                Task.Run(() => ListenAsync(_cancellationTokenSource.Token));
+                _ = ListenAsync(_cancellationTokenSource.Token);
             }
             catch (Exception ex)
             {
@@ -62,23 +76,38 @@ namespace RichPresenceApp.Classes
         // Listen for HTTP requests
         private async Task ListenAsync(CancellationToken cancellationToken)
         {
+            if (_listener == null)
+            {
+                ConsoleManager.WriteLine("HTTP listener is null, cannot listen for requests", ConsoleColor.Red, true);
+                return;
+            }
+
             try
             {
-                if (_listener == null)
-                {
-                    ConsoleManager.WriteLine("HTTP listener is null, cannot listen for requests", ConsoleColor.Red, true);
-                    return;
-                }
-
                 while (!cancellationToken.IsCancellationRequested && _listener.IsListening)
                 {
+                    // Get HTTP context with cancellation support
+                    HttpListenerContext context;
+
                     try
                     {
-                        // Get HTTP context
-                        HttpListenerContext context = await _listener.GetContextAsync();
+                        // Use GetContextAsync with cancellation token via TaskCompletionSource
+                        var tcs = new TaskCompletionSource<HttpListenerContext>();
 
-                        // Process request in a separate task
-                        _ = Task.Run(() => ProcessRequestAsync(context), cancellationToken);
+                        using var registration = cancellationToken.Register(() =>
+                            tcs.TrySetCanceled(cancellationToken));
+
+                        var getContextTask = _listener.GetContextAsync();
+                        var completedTask = await Task.WhenAny(getContextTask, tcs.Task);
+
+                        if (completedTask == tcs.Task)
+                        {
+                            // Cancellation was requested
+                            await tcs.Task; // This will throw OperationCanceledException
+                            break;
+                        }
+
+                        context = await getContextTask;
                     }
                     catch (ObjectDisposedException)
                     {
@@ -90,6 +119,9 @@ namespace RichPresenceApp.Classes
                         ConsoleManager.WriteLine($"HTTP listener error: {ex.Message}", ConsoleColor.Red, true);
                         break;
                     }
+
+                    // Process request in a separate task
+                    _ = ProcessRequestAsync(context);
                 }
             }
             catch (OperationCanceledException)
@@ -118,9 +150,12 @@ namespace RichPresenceApp.Classes
                 // Handle request based on method and path
                 if (request.HttpMethod == "POST" && request.Url?.AbsolutePath == "/")
                 {
-                    // Read request body
-                    using var reader = new System.IO.StreamReader(request.InputStream, request.ContentEncoding);
-                    string body = await reader.ReadToEndAsync();
+                    // Read request body efficiently using a buffer
+                    string body;
+                    using (var reader = new System.IO.StreamReader(request.InputStream, request.ContentEncoding))
+                    {
+                        body = await reader.ReadToEndAsync();
+                    }
 
                     // Log the received JSON (will only show in console if debug mode is enabled)
                     ConsoleManager.WriteLine($"Received game state JSON: {body}", ConsoleColor.Cyan);
@@ -129,13 +164,13 @@ namespace RichPresenceApp.Classes
                     ProcessGameStateUpdate(body);
 
                     // Send success response
-                    SendJsonResponse(response, new { success = true });
+                    await SendJsonResponseAsync(response, new { success = true });
                 }
                 else
                 {
                     // Send error response for unsupported requests
                     response.StatusCode = 404;
-                    SendJsonResponse(response, new { error = "Not found" });
+                    await SendJsonResponseAsync(response, new { error = "Not found" });
                 }
             }
             catch (Exception ex)
@@ -146,77 +181,79 @@ namespace RichPresenceApp.Classes
                 {
                     // Send error response
                     context.Response.StatusCode = 500;
-                    SendJsonResponse(context.Response, new { error = "Internal server error" });
+                    await SendJsonResponseAsync(context.Response, new { error = "Internal server error" });
                 }
                 catch
                 {
                     // Ignore errors when sending error response
                 }
             }
-        }
-
-        // Process game state update
-        private void ProcessGameStateUpdate(string json)
-        {
-            try
+            finally
             {
-                if (string.IsNullOrEmpty(json))
-                {
-                    ConsoleManager.WriteLine("Received empty game state JSON", ConsoleColor.Yellow, true);
-                    return;
-                }
-
-                // Parse game state with more flexible options
-                var options = new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true,
-                    ReadCommentHandling = JsonCommentHandling.Skip,
-                    AllowTrailingCommas = true
-                };
-
+                // Always close the response
                 try
                 {
-                    var gameState = JsonSerializer.Deserialize<GameState>(json, options);
-
-                    // Process the raw data to extract nested properties
-                    gameState?.ProcessRawData();
-
-                    // Update game state
-                    if (gameState != null)
-                    {
-                        _gameStateMonitor.UpdateGameState(gameState);
-                    }
-                    else
-                    {
-                        ConsoleManager.WriteLine("Failed to deserialize game state JSON", ConsoleColor.Red, true);
-                    }
+                    context.Response.Close();
                 }
-                catch (JsonException ex)
+                catch
                 {
-                    ConsoleManager.WriteLine($"Error parsing game state JSON: {ex.Message}", ConsoleColor.Red, true);
+                    // Ignore errors when closing response
                 }
+            }
+        }
+
+        // Process game state update - optimized
+        private void ProcessGameStateUpdate(string json)
+        {
+            if (string.IsNullOrEmpty(json))
+            {
+                ConsoleManager.LogError("Received empty game state JSON");
+                return;
+            }
+
+            try
+            {
+                // Parse game state with reused options
+                var gameState = JsonSerializer.Deserialize<GameState>(json, _jsonOptions);
+
+                // Process the raw data to extract nested properties
+                gameState?.ProcessRawData();
+
+                // Update game state
+                if (gameState != null)
+                {
+                    _gameStateMonitor.UpdateGameState(gameState);
+                    ConsoleManager.LogDebug("Game state updated successfully");
+                }
+                else
+                {
+                    ConsoleManager.LogError("Failed to deserialize game state JSON");
+                }
+            }
+            catch (JsonException ex)
+            {
+                ConsoleManager.LogError("Error parsing game state JSON", ex);
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error processing game state update: {ex.Message}", ConsoleColor.Red, true);
+                ConsoleManager.LogError("Error processing game state update", ex);
             }
         }
 
-        // Send JSON response
-        private void SendJsonResponse(HttpListenerResponse response, object data)
+        // Send JSON response asynchronously
+        private async Task SendJsonResponseAsync(HttpListenerResponse response, object data)
         {
             try
             {
                 // Serialize data
-                string json = JsonSerializer.Serialize(data);
+                string json = JsonSerializer.Serialize(data, _jsonOptions);
                 byte[] buffer = Encoding.UTF8.GetBytes(json);
 
                 // Set content length
                 response.ContentLength64 = buffer.Length;
 
-                // Write response
-                response.OutputStream.Write(buffer, 0, buffer.Length);
-                response.OutputStream.Close();
+                // Write response asynchronously
+                await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
             }
             catch (Exception ex)
             {
@@ -238,7 +275,10 @@ namespace RichPresenceApp.Classes
                 // Cancel listening
                 if (_cancellationTokenSource != null)
                 {
-                    _cancellationTokenSource.Cancel();
+                    if (!_cancellationTokenSource.IsCancellationRequested)
+                    {
+                        _cancellationTokenSource.Cancel();
+                    }
                     _cancellationTokenSource.Dispose();
                     _cancellationTokenSource = null;
                 }
@@ -261,5 +301,13 @@ namespace RichPresenceApp.Classes
                 ConsoleManager.WriteLine($"Error stopping HTTP server: {ex.Message}", ConsoleColor.Red, true);
             }
         }
+
+        // Implement IDisposable
+        public void Dispose()
+        {
+            Stop();
+            GC.SuppressFinalize(this);
+        }
     }
 }
+

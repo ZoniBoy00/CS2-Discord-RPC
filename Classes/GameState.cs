@@ -53,6 +53,18 @@ namespace RichPresenceApp.Classes
         [JsonIgnore]
         public int CurrentTScore { get; set; } = 0;
 
+        // Flag to track if player state is available
+        [JsonIgnore]
+        public bool HasPlayerState { get; set; } = false;
+
+        // Player alive status - extracted from player state
+        [JsonIgnore]
+        public bool PlayerAlive { get; set; } = true;
+
+        // Player team from player state (may be different from CurrentTeam when dead)
+        [JsonIgnore]
+        public string PlayerTeam { get; set; } = "Spectator";
+
         // Map object from CS2 GSI
         [JsonPropertyName("map")]
         public MapInfo? Map { get; set; }
@@ -79,27 +91,31 @@ namespace RichPresenceApp.Classes
             // Extract team scores
             if (Map != null)
             {
-                if (Map.TeamCT != null)
-                {
-                    CurrentCTScore = Map.TeamCT.Score;
-                }
-
-                if (Map.TeamT != null)
-                {
-                    CurrentTScore = Map.TeamT.Score;
-                }
+                CurrentCTScore = Map.TeamCT?.Score ?? 0;
+                CurrentTScore = Map.TeamT?.Score ?? 0;
             }
 
-            // Extract player activity
-            if (Player != null && !string.IsNullOrEmpty(Player.Activity))
+            // Extract player activity and state
+            if (Player != null)
             {
-                CurrentActivity = Player.Activity;
-            }
+                if (!string.IsNullOrEmpty(Player.Activity))
+                {
+                    CurrentActivity = Player.Activity;
+                }
 
-            // Extract player team
-            if (Player != null && !string.IsNullOrEmpty(Player.Team))
-            {
-                CurrentTeam = Player.Team;
+                // Extract player team
+                if (!string.IsNullOrEmpty(Player.Team))
+                {
+                    CurrentTeam = Player.Team;
+                    PlayerTeam = Player.Team;
+                }
+
+                // Extract player state (alive/dead)
+                if (Player.State != null)
+                {
+                    HasPlayerState = true;
+                    PlayerAlive = Player.State.Health > 0;
+                }
             }
         }
     }
@@ -156,5 +172,38 @@ namespace RichPresenceApp.Classes
 
         [JsonPropertyName("team")]
         public string Team { get; set; } = "Spectator";
+
+        // Player state information (health, armor, etc.)
+        [JsonPropertyName("state")]
+        public PlayerState? State { get; set; }
+    }
+
+    // Player state information class
+    public class PlayerState
+    {
+        [JsonPropertyName("health")]
+        public int Health { get; set; } = 100;
+
+        [JsonPropertyName("armor")]
+        public int Armor { get; set; } = 0;
+
+        [JsonPropertyName("helmet")]
+        public bool Helmet { get; set; } = false;
+
+        [JsonPropertyName("flashed")]
+        public int Flashed { get; set; } = 0;
+
+        [JsonPropertyName("burning")]
+        public int Burning { get; set; } = 0;
+
+        [JsonPropertyName("money")]
+        public int Money { get; set; } = 0;
+
+        [JsonPropertyName("round_kills")]
+        public int RoundKills { get; set; } = 0;
+
+        [JsonPropertyName("round_killhs")]
+        public int RoundKillHeadshots { get; set; } = 0;
     }
 }
+

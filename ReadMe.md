@@ -11,7 +11,7 @@ A sleek and lightweight Discord Rich Presence integration for Counter-Strike 2, 
 ✅ Runs in the system tray for minimal interference
 
 ## 📥 Installation
-1. Download the latest release from the [Releases](https://github.com/ZoniBoy00/CS2-Discord-RPC/latest) page.
+1. Download the latest release from the [Releases](https://github.com/ZoniBoy00/CS2-Discord-RPC/releases/latest) page.
 2. Run `CS2-Discord-RPC.exe`.
 3. The application will automatically configure the necessary CS2 Game State Integration files.
 

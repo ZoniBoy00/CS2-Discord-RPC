@@ -59,7 +59,7 @@ namespace RichPresenceApp.Classes
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error loading configuration: {ex.Message}", ConsoleColor.Red, true);
+                ConsoleManager.LogError("Error loading configuration", ex);
 
                 // Create default config
                 Current = new Config();
@@ -90,11 +90,11 @@ namespace RichPresenceApp.Classes
                 // Set current config
                 Current = config;
 
-                ConsoleManager.WriteLine("Configuration loaded successfully.", ConsoleColor.Green, true);
+                ConsoleManager.LogImportant("Configuration loaded successfully.");
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error loading existing config: {ex.Message}", ConsoleColor.Red, true);
+                ConsoleManager.LogError("Error loading existing config", ex);
                 CreateDefaultConfig();
             }
         }
@@ -108,7 +108,7 @@ namespace RichPresenceApp.Classes
             // Save default config
             Save();
 
-            ConsoleManager.WriteLine("Default configuration created.", ConsoleColor.Green, true);
+            ConsoleManager.LogImportant("Default configuration created.");
         }
 
         // Save configuration
@@ -118,7 +118,7 @@ namespace RichPresenceApp.Classes
             {
                 if (Current == null)
                 {
-                    ConsoleManager.WriteLine("Configuration not loaded, cannot save", ConsoleColor.Red, true);
+                    ConsoleManager.LogError("Configuration not loaded, cannot save");
                     return;
                 }
 
@@ -131,11 +131,11 @@ namespace RichPresenceApp.Classes
                 // Write config file
                 File.WriteAllText(ConfigFilePath, json);
 
-                ConsoleManager.WriteLine("Configuration saved successfully.", ConsoleColor.Green, true);
+                ConsoleManager.LogImportant("Configuration saved successfully.");
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error saving configuration: {ex.Message}", ConsoleColor.Red, true);
+                ConsoleManager.LogError("Error saving configuration", ex);
             }
         }
     }

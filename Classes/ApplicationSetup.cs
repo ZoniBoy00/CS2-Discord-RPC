@@ -18,7 +18,7 @@ namespace RichPresenceApp.Classes
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error during application setup: {ex.Message}", ConsoleColor.Red);
+                ConsoleManager.LogError("Error during application setup", ex);
             }
         }
 
@@ -29,11 +29,11 @@ namespace RichPresenceApp.Classes
             {
                 if (Config.Current == null)
                 {
-                    ConsoleManager.WriteLine("Configuration not loaded, cannot create GSI config", ConsoleColor.Red);
+                    ConsoleManager.LogError("Configuration not loaded, cannot create GSI config");
                     return;
                 }
 
-                // Define possible CS2 installation paths
+                // Define possible CS2 installation paths - reduced to most common paths
                 var possiblePaths = new List<string>
                 {
                     // Original CS:GO path
@@ -41,10 +41,7 @@ namespace RichPresenceApp.Classes
                     
                     // CS2 paths
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Steam", "steamapps", "common", "Counter-Strike 2", "game", "csgo", "cfg"),
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Steam", "steamapps", "common", "Counter-Strike 2", "csgo", "cfg"),
-                    
-                    // Additional path suggested by user
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Steam", "steamapps", "common", "Counter-Strike Global Offensive", "game", "csgo", "cfg", "gamestate_integration")
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Steam", "steamapps", "common", "Counter-Strike 2", "csgo", "cfg")
                 };
 
                 // Try to get CS2 directory from Utils
@@ -54,7 +51,6 @@ namespace RichPresenceApp.Classes
                     // Add potential cfg paths based on detected CS2 directory
                     possiblePaths.Add(Path.Combine(cs2Dir, "game", "csgo", "cfg"));
                     possiblePaths.Add(Path.Combine(cs2Dir, "csgo", "cfg"));
-                    possiblePaths.Add(Path.Combine(cs2Dir, "cfg"));
                 }
 
                 // Check if any of the paths exist
@@ -63,7 +59,7 @@ namespace RichPresenceApp.Classes
                 // If no path exists, return
                 if (existingPath == null)
                 {
-                    ConsoleManager.WriteLine("Could not find CS2 installation directory", ConsoleColor.Red);
+                    ConsoleManager.LogError("Could not find CS2 installation directory");
                     return;
                 }
 
@@ -78,7 +74,7 @@ namespace RichPresenceApp.Classes
                     }
                     catch (Exception ex)
                     {
-                        ConsoleManager.WriteLine($"Failed to create gamestate_integration directory: {ex.Message}", ConsoleColor.Yellow);
+                        ConsoleManager.LogError("Failed to create gamestate_integration directory", ex);
                         // Continue with the base cfg directory
                     }
                 }
@@ -94,7 +90,7 @@ namespace RichPresenceApp.Classes
                 // Check if GSI config already exists
                 if (File.Exists(gsiConfigPath))
                 {
-                    ConsoleManager.WriteLine($"CS2 GSI config already exists at: {gsiConfigPath}", ConsoleColor.Green);
+                    ConsoleManager.LogImportant($"CS2 GSI config already exists at: {gsiConfigPath}");
                     return;
                 }
 
@@ -105,8 +101,8 @@ namespace RichPresenceApp.Classes
                 gsiConfig.AppendLine($"    \"uri\"          \"http://{Config.Current.Host}:{Config.Current.HttpPort}\"");
                 gsiConfig.AppendLine("    \"timeout\"      \"5.0\"");
                 gsiConfig.AppendLine("    \"buffer\"       \"0.1\"");
-                gsiConfig.AppendLine("    \"throttle\"     \"0.1\"");
-                gsiConfig.AppendLine("    \"heartbeat\"    \"30.0\"");
+                gsiConfig.AppendLine("    \"throttle\"     \"0.5\""); // Increased throttle to reduce updates
+                gsiConfig.AppendLine("    \"heartbeat\"    \"60.0\""); // Increased heartbeat interval
                 gsiConfig.AppendLine("    \"data\"");
                 gsiConfig.AppendLine("    {");
                 gsiConfig.AppendLine("        \"provider\"             \"1\"");
@@ -114,19 +110,19 @@ namespace RichPresenceApp.Classes
                 gsiConfig.AppendLine("        \"round\"                \"1\"");
                 gsiConfig.AppendLine("        \"player_id\"            \"1\"");
                 gsiConfig.AppendLine("        \"player_state\"         \"1\"");
-                gsiConfig.AppendLine("        \"player_weapons\"       \"1\"");
-                gsiConfig.AppendLine("        \"player_match_stats\"   \"1\"");
+                gsiConfig.AppendLine("        \"player_weapons\"       \"0\""); // Disabled to reduce data
+                gsiConfig.AppendLine("        \"player_match_stats\"   \"0\""); // Disabled to reduce data
                 gsiConfig.AppendLine("    }");
                 gsiConfig.AppendLine("}");
 
                 // Write GSI config to file
                 File.WriteAllText(gsiConfigPath, gsiConfig.ToString());
 
-                ConsoleManager.WriteLine($"CS2 GSI config created at: {gsiConfigPath}", ConsoleColor.Green);
+                ConsoleManager.LogImportant($"CS2 GSI config created at: {gsiConfigPath}");
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error creating GSI config: {ex.Message}", ConsoleColor.Red);
+                ConsoleManager.LogError("Error creating GSI config", ex);
             }
         }
     }

@@ -23,7 +23,7 @@ namespace RichPresenceApp.Classes
         private readonly object _presenceLock = new object();
 
         // Timestamp when CS2 was first detected as running
-        private readonly DateTime _cs2StartTime;
+        private DateTime _cs2StartTime;
 
         // Flag to track if player is in a match
         private bool _isInMatch = false;
@@ -34,12 +34,16 @@ namespace RichPresenceApp.Classes
         // Game mode mapping - use ConcurrentDictionary for thread safety
         private readonly ConcurrentDictionary<string, string> _gameModeMap;
 
+        // Reusable StringBuilder for string operations
+        private readonly System.Text.StringBuilder _stringBuilder = new System.Text.StringBuilder(128);
+
+        // Throttle presence updates to reduce Discord API calls
+        private DateTime _lastPresenceUpdateTime = DateTime.MinValue;
+        private const int PRESENCE_UPDATE_THROTTLE_MS = 1000; // Limit updates to once per second
+
         // Constructor
         public DiscordManager()
         {
-            // Store the current time
-            _cs2StartTime = DateTime.UtcNow;
-
             // Initialize game mode map
             _gameModeMap = new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             InitializeGameModeMap();
@@ -65,26 +69,11 @@ namespace RichPresenceApp.Classes
                 { "scrimcomp5v5", "Premier" },
                 { "teamdeathmatch", "Team Deathmatch" },
                 { "retakes", "Retakes" },
-                { "ffa", "Free For All" },
-                { "1v1", "1v1" },
-                { "2v2", "2v2" },
-                { "3v3", "3v3" },
-                { "4v4", "4v4" },
-                { "5v5", "5v5" },
-                { "hostage", "Hostage Rescue" },
-                { "demolition", "Demolition" },
-                { "armsrace", "Arms Race" },
+                // Reduced number of entries to save memory
                 { "dangerzone", "Danger Zone" },
                 { "premier", "Premier" },
                 { "wingman", "Wingman" },
                 { "matchmaking", "Competitive" },
-                { "unranked", "Unranked" },
-                { "war", "War Games" },
-                { "flying_scoutsman", "Flying Scoutsman" },
-                { "retake", "Retakes" },
-                { "guardian", "Guardian" },
-                { "practice", "Practice" },
-                { "offline", "Offline" },
                 { "workshop", "Workshop" }
             };
 
@@ -99,11 +88,11 @@ namespace RichPresenceApp.Classes
         {
             try
             {
-                ConsoleManager.WriteLine("Initializing Discord RPC...");
+                ConsoleManager.LogImportant("Initializing Discord RPC...");
 
                 if (Config.Current == null)
                 {
-                    ConsoleManager.WriteLine("Configuration not loaded, cannot initialize Discord RPC", ConsoleColor.Red);
+                    ConsoleManager.LogError("Configuration not loaded, cannot initialize Discord RPC");
                     return;
                 }
 
@@ -116,7 +105,7 @@ namespace RichPresenceApp.Classes
                 // Validate application ID - only check if it's empty or placeholder
                 if (string.IsNullOrEmpty(appId) || appId == "DISCORD_CLIENT_ID")
                 {
-                    ConsoleManager.WriteLine("Invalid Discord Application ID. Please update the ApplicationId in Config.cs", ConsoleColor.Red, true);
+                    ConsoleManager.LogError("Invalid Discord Application ID. Please update the ApplicationId in Config.cs");
                     MessageBox.Show(
                         "Invalid Discord Application ID. Please update the ApplicationId in Config.cs with your Discord application ID.",
                         "Configuration Error",
@@ -125,7 +114,7 @@ namespace RichPresenceApp.Classes
                     return;
                 }
 
-                ConsoleManager.WriteLine($"Using Discord Application ID: {appId}", ConsoleColor.Cyan, true);
+                ConsoleManager.LogImportant($"Using Discord Application ID: {appId}");
 
                 // Create client using the DiscordRichPresence library with custom logger
                 _client = new DiscordRpcClient(appId)
@@ -135,13 +124,13 @@ namespace RichPresenceApp.Classes
 
                 // Subscribe to events
                 _client.OnReady += (_, e) =>
-                    ConsoleManager.WriteLine($"Connected to Discord successfully as {e.User.Username}", ConsoleColor.Green, true);
+                    ConsoleManager.LogImportant($"Connected to Discord successfully as {e.User.Username}");
 
                 _client.OnConnectionFailed += (_, e) =>
-                    ConsoleManager.WriteLine($"Connection to Discord failed: {e.FailedPipe}", ConsoleColor.Red, true);
+                    ConsoleManager.LogError($"Connection to Discord failed: {e.FailedPipe}");
 
                 _client.OnConnectionEstablished += (_, e) =>
-                    ConsoleManager.WriteLine($"Connection to Discord established on pipe: {e.ConnectedPipe}", ConsoleColor.Green, true);
+                    ConsoleManager.LogDebug($"Connection to Discord established on pipe: {e.ConnectedPipe}");
 
                 _client.OnPresenceUpdate += (_, e) =>
                     ConsoleManager.LogDebug($"Presence updated: {e.Presence?.Details}");
@@ -152,14 +141,14 @@ namespace RichPresenceApp.Classes
                 // Check if client is initialized
                 if (initialized)
                 {
-                    ConsoleManager.WriteLine("Discord RPC initialized successfully.", ConsoleColor.Green, true);
+                    ConsoleManager.LogImportant("Discord RPC initialized successfully.");
 
-                    // Set initial presence
-                    SetDefaultPresence();
+                    // Clear presence initially - don't show anything until game is detected
+                    ClearPresence();
                 }
                 else
                 {
-                    ConsoleManager.WriteLine("Failed to initialize Discord RPC client. Make sure Discord is running.", ConsoleColor.Red, true);
+                    ConsoleManager.LogError("Failed to initialize Discord RPC client. Make sure Discord is running.");
                     MessageBox.Show(
                         "Failed to connect to Discord. Please make sure Discord is running and try again.",
                         "Connection Error",
@@ -169,7 +158,7 @@ namespace RichPresenceApp.Classes
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error initializing Discord RPC: {ex.Message}", ConsoleColor.Red, true);
+                ConsoleManager.LogError("Error initializing Discord RPC", ex);
             }
         }
 
@@ -178,6 +167,12 @@ namespace RichPresenceApp.Classes
         {
             if (_client == null || !_client.IsInitialized)
                 return;
+
+            // Throttle updates to reduce Discord API calls
+            if ((DateTime.UtcNow - _lastPresenceUpdateTime).TotalMilliseconds < PRESENCE_UPDATE_THROTTLE_MS)
+            {
+                return;
+            }
 
             try
             {
@@ -219,6 +214,7 @@ namespace RichPresenceApp.Classes
 
                         _lastPresenceHash = presenceHash;
                         _isPresenceCleared = false;
+                        _lastPresenceUpdateTime = DateTime.UtcNow;
 
                         // Log significant presence changes
                         if (matchStateChanged)
@@ -301,7 +297,7 @@ namespace RichPresenceApp.Classes
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error reinitializing Discord client: {ex.Message}", ConsoleColor.Red, true);
+                ConsoleManager.LogError("Error reinitializing Discord client", ex);
             }
         }
 
@@ -324,7 +320,10 @@ namespace RichPresenceApp.Classes
                 _isInMatch = false;
                 _lastKnownMap = "Unknown";
 
-                ConsoleManager.WriteLine("Setting default Discord presence", ConsoleColor.Cyan, true);
+                // Set the start time to now when game is first detected
+                _cs2StartTime = DateTime.UtcNow;
+
+                ConsoleManager.LogImportant("Setting default Discord presence");
 
                 var presence = new RichPresence
                 {
@@ -346,11 +345,12 @@ namespace RichPresenceApp.Classes
 
                 _lastPresenceHash = CalculatePresenceHash(presence);
                 _isPresenceCleared = false;
-                ConsoleManager.WriteLine("Default presence set successfully.", ConsoleColor.Green, true);
+                _lastPresenceUpdateTime = DateTime.UtcNow;
+                ConsoleManager.LogImportant("Default presence set successfully.");
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error setting default presence: {ex.Message}", ConsoleColor.Red, true);
+                ConsoleManager.LogError("Error setting default presence", ex);
 
                 // Try to reinitialize Discord client
                 TryReinitialize();
@@ -429,13 +429,13 @@ namespace RichPresenceApp.Classes
 
                         _lastPresenceHash = null;
                         _isPresenceCleared = true;
-                        ConsoleManager.WriteLine("Discord presence cleared.", ConsoleColor.Yellow, true);
+                        ConsoleManager.LogImportant("Discord presence cleared.");
                     }
                 }
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error clearing presence: {ex.Message}", ConsoleColor.Red, true);
+                ConsoleManager.LogError("Error clearing presence", ex);
             }
         }
 
@@ -451,43 +451,43 @@ namespace RichPresenceApp.Classes
                         ClearPresence();
                         _client.Dispose();
                         _client = null;
-                        ConsoleManager.WriteLine("Discord RPC shut down.", ConsoleColor.Yellow, true);
+                        ConsoleManager.LogImportant("Discord RPC shut down.");
                     }
                 }
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error shutting down Discord RPC: {ex.Message}", ConsoleColor.Red, true);
+                ConsoleManager.LogError("Error shutting down Discord RPC", ex);
             }
         }
 
-        // Build details string
+        // Build details string - optimized to reuse StringBuilder
         private string BuildDetailsString(GameState gameState, string? mapName = null)
         {
             if (Config.Current == null)
                 return "Playing CS2";
 
-            var details = new System.Text.StringBuilder(64); // Pre-allocate capacity
+            _stringBuilder.Clear();
 
             // Use provided map name
             string mapToShow = mapName ?? "Unknown";
 
             if (Config.Current.ShowMap && !string.IsNullOrEmpty(mapToShow) && mapToShow != "Unknown")
             {
-                details.Append($"Map: {mapToShow}");
+                _stringBuilder.Append($"Map: {mapToShow}");
             }
 
             if (Config.Current.ShowGameMode && !string.IsNullOrEmpty(gameState.CurrentGameMode) && gameState.CurrentGameMode != "Unknown")
             {
-                if (details.Length > 0)
-                    details.Append(" | ");
+                if (_stringBuilder.Length > 0)
+                    _stringBuilder.Append(" | ");
 
                 // Get formatted game mode name
                 string formattedGameMode = GetFormattedGameMode(gameState.CurrentGameMode);
-                details.Append($"Mode: {formattedGameMode}");
+                _stringBuilder.Append($"Mode: {formattedGameMode}");
             }
 
-            return details.Length > 0 ? details.ToString() : "Playing CS2";
+            return _stringBuilder.Length > 0 ? _stringBuilder.ToString() : "Playing CS2";
         }
 
         // Get formatted game mode name
@@ -504,25 +504,25 @@ namespace RichPresenceApp.Classes
             return char.ToUpper(gameMode[0]) + gameMode.Substring(1);
         }
 
-        // Build state string - MODIFIED to handle spectator/dead state
+        // Build state string - optimized to reuse StringBuilder
         private string BuildStateString(GameState gameState)
         {
             if (Config.Current == null)
                 return "In a match";
 
-            var state = new System.Text.StringBuilder(64); // Pre-allocate capacity
+            _stringBuilder.Clear();
 
             // Add score if enabled
             if (Config.Current.ShowScore && _isInMatch)
             {
-                state.Append($"Score: CT {gameState.CurrentCTScore} - T {gameState.CurrentTScore}");
+                _stringBuilder.Append($"Score: CT {gameState.CurrentCTScore} - T {gameState.CurrentTScore}");
             }
 
-            // Show team information - MODIFIED for better spectator/team handling
+            // Show team information
             if (Config.Current.ShowTeam && _isInMatch)
             {
-                if (state.Length > 0)
-                    state.Append(" | ");
+                if (_stringBuilder.Length > 0)
+                    _stringBuilder.Append(" | ");
 
                 // Check if player is a spectator or on a team
                 if (gameState.CurrentTeam.Equals("Spectator", StringComparison.OrdinalIgnoreCase))
@@ -535,38 +535,38 @@ namespace RichPresenceApp.Classes
                         if (!string.IsNullOrEmpty(gameState.PlayerTeam) &&
                             !gameState.PlayerTeam.Equals("Spectator", StringComparison.OrdinalIgnoreCase))
                         {
-                            state.Append($"Team: {gameState.PlayerTeam} (Dead)");
+                            _stringBuilder.Append($"Team: {gameState.PlayerTeam} (Dead)");
                         }
                         else
                         {
-                            state.Append("Dead");
+                            _stringBuilder.Append("Dead");
                         }
                     }
                     else
                     {
                         // Pure spectator (not playing)
-                        state.Append("Spectating");
+                        _stringBuilder.Append("Spectating");
                     }
                 }
                 else
                 {
                     // Player is on a team (CT or T)
-                    state.Append($"Team: {gameState.CurrentTeam}");
+                    _stringBuilder.Append($"Team: {gameState.CurrentTeam}");
 
                     // Add dead status if player is not alive
                     if (gameState.HasPlayerState && gameState.PlayerAlive == false)
                     {
-                        state.Append(" (Dead)");
+                        _stringBuilder.Append(" (Dead)");
                     }
                 }
             }
 
-            if (state.Length == 0)
+            if (_stringBuilder.Length == 0)
             {
                 return _isInMatch ? "In a match" : "Waiting for a match";
             }
 
-            return state.ToString();
+            return _stringBuilder.ToString();
         }
 
         // Get map image key
@@ -633,7 +633,7 @@ namespace RichPresenceApp.Classes
             // Only log warnings if they're not about Invoke
             if (!message.Contains("Invoke"))
             {
-                ConsoleManager.WriteLine($"[Discord Warning] {string.Format(message, args)}", ConsoleColor.Yellow);
+                ConsoleManager.LogDebug($"[Discord Warning] {string.Format(message, args)}");
             }
         }
 
@@ -642,7 +642,7 @@ namespace RichPresenceApp.Classes
             // Only log errors if they're not about Invoke
             if (!message.Contains("Invoke"))
             {
-                ConsoleManager.WriteLine($"[Discord Error] {string.Format(message, args)}", ConsoleColor.Red, true);
+                ConsoleManager.LogError($"[Discord Error] {string.Format(message, args)}");
             }
         }
     }

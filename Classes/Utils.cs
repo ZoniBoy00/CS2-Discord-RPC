@@ -1,7 +1,6 @@
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
 namespace RichPresenceApp.Classes
@@ -17,8 +16,8 @@ namespace RichPresenceApp.Classes
         // Cache expiration
         private static DateTime _cacheExpiration = DateTime.MinValue;
 
-        // Cache duration in minutes
-        private const int CACHE_DURATION_MINUTES = 5;
+        // Cache duration in minutes - increased to reduce disk I/O
+        private const int CACHE_DURATION_MINUTES = 30;
 
         // Get CS2 directory with caching
         public static string? GetCS2Directory()
@@ -83,7 +82,7 @@ namespace RichPresenceApp.Classes
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error getting CS2 directory: {ex.Message}", ConsoleColor.Red);
+                ConsoleManager.LogError("Error getting CS2 directory", ex);
                 return null;
             }
         }
@@ -115,39 +114,8 @@ namespace RichPresenceApp.Classes
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error getting Steam path: {ex.Message}", ConsoleColor.Red);
+                ConsoleManager.LogError("Error getting Steam path", ex);
                 return null;
-            }
-        }
-
-        // Check if CS2 is running - optimized with process name array
-        public static bool IsGameRunning()
-        {
-            try
-            {
-                // Check for cs2.exe process and other possible names
-                string[] processNames = { "cs2", "csgo", "Counter-Strike 2", "Counter-Strike Global Offensive" };
-
-                foreach (string processName in processNames)
-                {
-                    Process[] processes = Process.GetProcessesByName(processName);
-                    if (processes.Length > 0)
-                    {
-                        // Dispose processes to prevent resource leaks
-                        foreach (var process in processes)
-                        {
-                            process.Dispose();
-                        }
-                        return true;
-                    }
-                }
-
-                return false;
-            }
-            catch (Exception ex)
-            {
-                ConsoleManager.WriteLine($"Error checking if CS2 is running: {ex.Message}", ConsoleColor.Red);
-                return false;
             }
         }
     }

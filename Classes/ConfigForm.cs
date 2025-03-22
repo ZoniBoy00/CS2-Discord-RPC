@@ -9,10 +9,8 @@ namespace RichPresenceApp.Classes
     {
         // CS2 Theme Colors - make readonly
         private static readonly Color BackgroundColor = Color.FromArgb(24, 26, 27);
-        private static readonly Color PanelColor = Color.FromArgb(32, 34, 37);
         private static readonly Color AccentColor = Color.FromArgb(255, 165, 0); // CS2 Orange
         private static readonly Color TextColor = Color.FromArgb(220, 221, 222);
-        private static readonly Color SecondaryTextColor = Color.FromArgb(142, 146, 151);
 
         // Controls - initialize with null to make them nullable
         private Panel? _mainPanel;
@@ -38,12 +36,12 @@ namespace RichPresenceApp.Classes
             ApplyCS2StyleToCheckBoxes();
         }
 
-        // Initialize component
+        // Initialize component - optimized to reduce allocations
         private void InitializeComponent()
         {
             // Set form properties
             Text = "CS2 Rich Presence Settings";
-            Size = new Size(450, 350); // Reduced height since we removed controls
+            Size = new Size(450, 350);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -182,7 +180,7 @@ namespace RichPresenceApp.Classes
             {
                 if (Config.Current == null)
                 {
-                    ConsoleManager.WriteLine("Configuration not loaded, cannot load settings", ConsoleColor.Red, true);
+                    ConsoleManager.LogError("Configuration not loaded, cannot load settings");
                     return;
                 }
 
@@ -194,7 +192,7 @@ namespace RichPresenceApp.Classes
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error loading settings: {ex.Message}", ConsoleColor.Red, true);
+                ConsoleManager.LogError("Error loading settings", ex);
                 MessageBox.Show($"Error loading settings: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -206,7 +204,7 @@ namespace RichPresenceApp.Classes
             {
                 if (Config.Current == null)
                 {
-                    ConsoleManager.WriteLine("Configuration not loaded, cannot save settings", ConsoleColor.Red, true);
+                    ConsoleManager.LogError("Configuration not loaded, cannot save settings");
                     return;
                 }
 
@@ -225,7 +223,7 @@ namespace RichPresenceApp.Classes
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error saving settings: {ex.Message}", ConsoleColor.Red, true);
+                ConsoleManager.LogError("Error saving settings", ex);
                 MessageBox.Show($"Error saving settings: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }

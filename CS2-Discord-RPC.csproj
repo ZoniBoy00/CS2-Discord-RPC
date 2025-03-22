@@ -13,9 +13,17 @@
   <PublishReadyToRun>true</PublishReadyToRun>
   <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-  <DebugType>embedded</DebugType>
+  <DebugType>embedded</DebugType> 
   <EnableWindowsTargeting>true</EnableWindowsTargeting>
   <ApplicationManifest>app.manifest</ApplicationManifest>
+  <!-- Version information added -->
+  <Version>1.1.0</Version>
+  <AssemblyVersion>1.1.0.0</AssemblyVersion>
+  <FileVersion>1.1.0.0</FileVersion>
+  <Product>CS2 Discord RPC</Product>
+  <Company>CZoniBoy00</Company>
+  <Description>Discord Rich Presence for Counter-Strike 2</Description>
+  <Copyright>Copyright © 2025</Copyright>
 </PropertyGroup>
 
 <!-- Debug configuration -->

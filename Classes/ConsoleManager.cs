@@ -10,6 +10,9 @@ namespace RichPresenceApp.Classes
         // Debug mode flag
         private static bool _debugMode = false;
 
+        // Verbose logging flag
+        private static bool _verboseLogging = false;
+
         // Log file path
         private static readonly string LogFilePath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -24,19 +27,21 @@ namespace RichPresenceApp.Classes
         private static readonly object _logLock = new object();
 
         // Buffer for log messages to reduce disk I/O
-        private static readonly StringBuilder _logBuffer = new StringBuilder(4096);
+        private static readonly StringBuilder _logBuffer = new StringBuilder(8192);
 
         // Timer for flushing log buffer
         private static System.Threading.Timer? _flushTimer;
 
         // Constants
-        private const int FLUSH_INTERVAL_MS = 5000; // 5 seconds
+        private const int FLUSH_INTERVAL_MS = 10000; // 10 seconds - increased to reduce I/O
 
         // Initialize console manager
-        public static void Initialize()
+        public static void Initialize(bool verboseLogging = false)
         {
             try
             {
+                _verboseLogging = verboseLogging;
+
                 // Create log directory if it doesn't exist
                 string? directory = Path.GetDirectoryName(LogFilePath);
                 if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
@@ -47,15 +52,18 @@ namespace RichPresenceApp.Classes
                 // Open log file for writing
                 OpenLogFile();
 
-                // Start flush timer
+                // Start flush timer with longer interval
                 _flushTimer = new System.Threading.Timer(FlushLogBuffer, null, FLUSH_INTERVAL_MS, FLUSH_INTERVAL_MS);
 
-                // Write initial log entry
-                WriteLine($"Log started at {DateTime.Now}", ConsoleColor.Green, true);
-                WriteLine($"Application version: 1.0.0", ConsoleColor.Green, true);
-                WriteLine($"OS version: {Environment.OSVersion}", ConsoleColor.Green, true);
-                WriteLine($".NET version: {Environment.Version}", ConsoleColor.Green, true);
-                WriteLine(new string('-', 50), ConsoleColor.Gray, true);
+                // Write initial log entry (minimal)
+                LogImportant($"Log started at {DateTime.Now}");
+                LogImportant($"Application version: 1.1.0");
+
+                if (_verboseLogging)
+                {
+                    LogImportant($"OS version: {Environment.OSVersion}");
+                    LogImportant($".NET version: {Environment.Version}");
+                }
             }
             catch (Exception ex)
             {
@@ -108,7 +116,7 @@ namespace RichPresenceApp.Classes
             }
         }
 
-        // Write line to console and log file
+        // Write line to console and log file - optimized to reduce string allocations
         public static void WriteLine(string message, ConsoleColor color = ConsoleColor.White, bool forceOutput = false)
         {
             try
@@ -117,7 +125,10 @@ namespace RichPresenceApp.Classes
                 if (!_debugMode && !forceOutput && IsDebugMessage(message))
                 {
                     // Still log to file but don't show in console
-                    AppendToLogBuffer($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}");
+                    if (_verboseLogging)
+                    {
+                        AppendToLogBuffer($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}");
+                    }
                     return;
                 }
 
@@ -152,7 +163,7 @@ namespace RichPresenceApp.Classes
                     _logBuffer.AppendLine(message);
 
                     // If buffer exceeds threshold, flush immediately
-                    if (_logBuffer.Length > 4000)
+                    if (_logBuffer.Length > 8000)
                     {
                         FlushLogBuffer(null);
                     }
@@ -204,7 +215,7 @@ namespace RichPresenceApp.Classes
             {
                 WriteLine($"[DEBUG] {message}", color, false);
             }
-            else
+            else if (_verboseLogging)
             {
                 // Still log to file but don't show in console
                 AppendToLogBuffer($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [DEBUG] {message}");
@@ -217,7 +228,7 @@ namespace RichPresenceApp.Classes
             string errorMessage = ex != null ? $"{message}: {ex.Message}" : message;
             WriteLine(errorMessage, ConsoleColor.Red, true);
 
-            if (ex != null && ex.StackTrace != null)
+            if (ex != null && ex.StackTrace != null && _verboseLogging)
             {
                 // Log stack trace to file only
                 AppendToLogBuffer($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Stack trace: {ex.StackTrace}");

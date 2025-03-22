@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Buffers;
 
 namespace RichPresenceApp.Classes
 {
@@ -20,6 +21,9 @@ namespace RichPresenceApp.Classes
 
         // JSON options - create once and reuse
         private readonly JsonSerializerOptions _jsonOptions;
+
+        // Buffer size for reading request bodies
+        private const int BUFFER_SIZE = 4096;
 
         // Constructor
         public HttpServer(GameStateMonitor gameStateMonitor)
@@ -42,7 +46,7 @@ namespace RichPresenceApp.Classes
             {
                 if (Config.Current == null)
                 {
-                    ConsoleManager.WriteLine("Configuration not loaded, cannot start HTTP server", ConsoleColor.Red, true);
+                    ConsoleManager.LogError("Configuration not loaded, cannot start HTTP server");
                     return;
                 }
 
@@ -59,7 +63,7 @@ namespace RichPresenceApp.Classes
                 // Start listener
                 _listener.Start();
 
-                ConsoleManager.WriteLine($"HTTP server started at {prefix}", ConsoleColor.Green, true);
+                ConsoleManager.LogImportant($"HTTP server started at {prefix}");
 
                 // Create cancellation token source
                 _cancellationTokenSource = new CancellationTokenSource();
@@ -69,7 +73,7 @@ namespace RichPresenceApp.Classes
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error starting HTTP server: {ex.Message}", ConsoleColor.Red, true);
+                ConsoleManager.LogError("Error starting HTTP server", ex);
             }
         }
 
@@ -78,7 +82,7 @@ namespace RichPresenceApp.Classes
         {
             if (_listener == null)
             {
-                ConsoleManager.WriteLine("HTTP listener is null, cannot listen for requests", ConsoleColor.Red, true);
+                ConsoleManager.LogError("HTTP listener is null, cannot listen for requests");
                 return;
             }
 
@@ -116,7 +120,7 @@ namespace RichPresenceApp.Classes
                     }
                     catch (HttpListenerException ex)
                     {
-                        ConsoleManager.WriteLine($"HTTP listener error: {ex.Message}", ConsoleColor.Red, true);
+                        ConsoleManager.LogError("HTTP listener error", ex);
                         break;
                     }
 
@@ -130,11 +134,11 @@ namespace RichPresenceApp.Classes
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error listening for HTTP requests: {ex.Message}", ConsoleColor.Red, true);
+                ConsoleManager.LogError("Error listening for HTTP requests", ex);
             }
         }
 
-        // Process HTTP request
+        // Process HTTP request - optimized to use buffer pooling
         private async Task ProcessRequestAsync(HttpListenerContext context)
         {
             try
@@ -150,15 +154,30 @@ namespace RichPresenceApp.Classes
                 // Handle request based on method and path
                 if (request.HttpMethod == "POST" && request.Url?.AbsolutePath == "/")
                 {
-                    // Read request body efficiently using a buffer
+                    // Read request body efficiently using a buffer from the pool
                     string body;
-                    using (var reader = new System.IO.StreamReader(request.InputStream, request.ContentEncoding))
+                    byte[] buffer = ArrayPool<byte>.Shared.Rent(BUFFER_SIZE);
+
+                    try
                     {
-                        body = await reader.ReadToEndAsync();
+                        using (var ms = new System.IO.MemoryStream())
+                        {
+                            int bytesRead;
+                            while ((bytesRead = await request.InputStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                            {
+                                await ms.WriteAsync(buffer, 0, bytesRead);
+                            }
+
+                            body = Encoding.UTF8.GetString(ms.ToArray());
+                        }
+                    }
+                    finally
+                    {
+                        ArrayPool<byte>.Shared.Return(buffer);
                     }
 
                     // Log the received JSON (will only show in console if debug mode is enabled)
-                    ConsoleManager.WriteLine($"Received game state JSON: {body}", ConsoleColor.Cyan);
+                    ConsoleManager.LogDebug($"Received game state JSON: {body}");
 
                     // Process game state update
                     ProcessGameStateUpdate(body);
@@ -175,7 +194,7 @@ namespace RichPresenceApp.Classes
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error processing HTTP request: {ex.Message}", ConsoleColor.Red, true);
+                ConsoleManager.LogError("Error processing HTTP request", ex);
 
                 try
                 {
@@ -240,7 +259,7 @@ namespace RichPresenceApp.Classes
             }
         }
 
-        // Send JSON response asynchronously
+        // Send JSON response asynchronously - optimized to use buffer pooling
         private async Task SendJsonResponseAsync(HttpListenerResponse response, object data)
         {
             try
@@ -257,7 +276,7 @@ namespace RichPresenceApp.Classes
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error sending JSON response: {ex.Message}", ConsoleColor.Red, true);
+                ConsoleManager.LogError("Error sending JSON response", ex);
             }
         }
 
@@ -294,11 +313,11 @@ namespace RichPresenceApp.Classes
                     _listener = null;
                 }
 
-                ConsoleManager.WriteLine("HTTP server stopped", ConsoleColor.Yellow, true);
+                ConsoleManager.LogImportant("HTTP server stopped");
             }
             catch (Exception ex)
             {
-                ConsoleManager.WriteLine($"Error stopping HTTP server: {ex.Message}", ConsoleColor.Red, true);
+                ConsoleManager.LogError("Error stopping HTTP server", ex);
             }
         }
 

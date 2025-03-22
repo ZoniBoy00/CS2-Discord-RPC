@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Reflection;
 using System.Windows.Forms;
 using System.Threading;
 using RichPresenceApp.Classes;
@@ -9,7 +8,7 @@ namespace RichPresenceApp
 {
     internal static class Program
     {
-        // Flag to track if CS2 is running
+        // Flag to track if CS2 is running - explicitly initialize to false
         public static bool IsGameRunning { get; set; } = false;
 
         // Application path - use AppContext.BaseDirectory for single-file apps
@@ -31,14 +30,14 @@ namespace RichPresenceApp
 
             try
             {
-                // Initialize console manager
-                ConsoleManager.Initialize();
+                // Initialize console manager with minimal logging
+                ConsoleManager.Initialize(false);
 
                 // Check if Discord is running
                 bool discordRunning = IsDiscordRunning();
                 if (!discordRunning)
                 {
-                    ConsoleManager.WriteLine("Discord is not running. Please start Discord and try again.", ConsoleColor.Yellow, true);
+                    ConsoleManager.LogImportant("Discord is not running. Please start Discord and try again.");
                     MessageBox.Show(
                         "Discord is not running. Please start Discord and try again.",
                         "Discord Not Found",
@@ -51,7 +50,7 @@ namespace RichPresenceApp
 
                 // Setup application (GSI config)
                 ApplicationSetup.Setup();
-                ConsoleManager.WriteLine("Application setup completed successfully.", ConsoleColor.Green, true);
+                ConsoleManager.LogImportant("Application setup completed successfully.");
 
                 // Initialize services
                 var discordManager = new DiscordManager();
@@ -61,6 +60,11 @@ namespace RichPresenceApp
                 // Start services
                 discordManager.Initialize();
                 httpServer.Start();
+
+                // Make sure CS2 is not running initially
+                IsGameRunning = false;
+
+                // Start game process monitor
                 gameStateMonitor.StartGameProcessMonitor();
 
                 // Create system tray
@@ -140,10 +144,6 @@ namespace RichPresenceApp
                 try
                 {
                     ConsoleManager.LogError($"{context}", ex);
-
-                    // Log additional system information
-                    ConsoleManager.WriteLine($"OS: {Environment.OSVersion}", ConsoleColor.Red, true);
-                    ConsoleManager.WriteLine($".NET Version: {Environment.Version}", ConsoleColor.Red, true);
                 }
                 catch
                 {
@@ -163,12 +163,7 @@ namespace RichPresenceApp
                     if (ex.InnerException != null)
                     {
                         writer.WriteLine($"Inner exception: {ex.InnerException.Message}");
-                        writer.WriteLine($"Inner stack trace: {ex.InnerException.StackTrace}");
                     }
-
-                    writer.WriteLine($"OS: {Environment.OSVersion}");
-                    writer.WriteLine($".NET Version: {Environment.Version}");
-                    writer.WriteLine(new string('-', 50));
                 }
             }
             catch
@@ -182,7 +177,7 @@ namespace RichPresenceApp
         {
             try
             {
-                // Check for Discord processes
+                // Check for Discord processes - use static array to avoid allocations
                 string[] discordProcessNames = {
                     "Discord",
                     "DiscordPTB",
@@ -194,7 +189,6 @@ namespace RichPresenceApp
                 {
                     if (System.Diagnostics.Process.GetProcessesByName(processName).Length > 0)
                     {
-                        ConsoleManager.LogImportant($"Found Discord process: {processName}");
                         return true;
                     }
                 }
